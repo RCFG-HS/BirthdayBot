@@ -7,17 +7,14 @@ import json, os, re, calendar
 from dotenv import load_dotenv
 from collections import defaultdict
 
-# Load token
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Config
 GUILD_ID = 895437097794666546
 CHANNEL_ID = 1382399105745293483
 BIRTHDAY_ROLE_NAME = "Birthday"
 BIRTHDAYS_FILE = "birthdays.json"
 
-# Utils
 def load_birthdays():
     try:
         with open(BIRTHDAYS_FILE, "r") as f:
@@ -29,20 +26,19 @@ def save_birthdays(data):
     with open(BIRTHDAYS_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Modal for birthday input
 class BirthdayModal(Modal, title="Enter Your Birthday"):
-    birthday = TextInput(label="Birthday (MM-DD)", placeholder="Example: 06-10")
+    birthday = TextInput(label="Birthday (DD-MM)", placeholder="Example: 06-10")
 
     async def on_submit(self, interaction: discord.Interaction):
         date_str = self.birthday.value.strip()
         user_id = str(interaction.user.id)
 
-        if not re.fullmatch(r"^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$", date_str):
-            await interaction.response.send_message("Invalid format. Use MM-DD (e.g., 06-10).", ephemeral=True)
+        if not re.fullmatch(r"^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])$", date_str):
+            await interaction.response.send_message("Invalid format. Use DD-MM (e.g., 10-06).", ephemeral=True)
             return
 
         try:
-            datetime.strptime(date_str, "%m-%d")
+            datetime.strptime(date_str, "%d-%m")
         except ValueError:
             await interaction.response.send_message("Invalid date.", ephemeral=True)
             return
@@ -58,13 +54,11 @@ class BirthdayModal(Modal, title="Enter Your Birthday"):
         await interaction.response.send_message(f"🎉 Birthday set to {date_str}", ephemeral=True)
         await update_birthday_message(interaction.client)
 
-# View with button
 class BirthdayView(View):
     @discord.ui.button(label="Submit Birthday", style=discord.ButtonStyle.primary)
     async def submit_birthday(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(BirthdayModal())
 
-# Set up bot
 intents = discord.Intents.default()
 intents.members = True
 
@@ -72,7 +66,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 birthday_message = None
 
-# Sync and ready
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
@@ -84,16 +77,14 @@ async def on_ready():
     check_birthdays.start()
     await update_birthday_message(bot)
 
-# Slash command
 @tree.command(name="birthday", description="Submit your birthday", guild=discord.Object(id=GUILD_ID))
 async def birthday(interaction: discord.Interaction):
     await interaction.response.send_modal(BirthdayModal())
 
-# Birthday checker
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
-    today = datetime.now(timezone.utc).strftime("%m-%d")
+    today = datetime.now(timezone.utc).strftime("%d-%m")
     data = load_birthdays()
     guild = bot.get_guild(GUILD_ID)
     if not guild:
@@ -121,7 +112,6 @@ async def check_birthdays():
             except Exception as e:
                 print(f"Error removing role: {e}")
 
-# Update birthday embed
 async def update_birthday_message(client: discord.Client):
     global birthday_message
     channel = client.get_channel(CHANNEL_ID)
@@ -137,15 +127,23 @@ async def update_birthday_message(client: discord.Client):
         print(f"Error clearing messages: {e}")
 
     data = load_birthdays()
-    sorted_birthdays = sorted(data.items(), key=lambda i: datetime.strptime(i[1], "%m-%d"))
+    valid_birthdays = []
+    for user_id, date_str in data.items():
+        try:
+            parsed = datetime.strptime(date_str, "%d-%m")
+            valid_birthdays.append((user_id, date_str, parsed))
+        except ValueError:
+            continue
+
+    sorted_birthdays = sorted(valid_birthdays, key=lambda x: x[2])
 
     if not sorted_birthdays:
         description = "No birthdays submitted yet."
     else:
         grouped = defaultdict(list)
-        for user_id, date in sorted_birthdays:
-            month = int(date.split("-")[0])
-            grouped[month].append((user_id, date))
+        for user_id, date_str, parsed in sorted_birthdays:
+            month = parsed.month
+            grouped[month].append((user_id, date_str))
 
         lines = []
         for month in range(1, 13):
@@ -172,7 +170,6 @@ async def update_birthday_message(client: discord.Client):
 
     birthday_message = await channel.send(embed=embed, view=BirthdayView())
 
-# Run the bot
 if not TOKEN:
     print("❌ DISCORD_BOT_TOKEN not set. Check .env file.")
 else:
