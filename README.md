@@ -61,7 +61,7 @@ If you need help or want to contribute, join the server:
 
 https://discord.gg/au4U6R2GBP
 
-Or contact Created by rtgm_ ([Discord Profile](https://discord.com/users/1123319935360319568))  
+Or contact rtgm_ ([Discord Profile](https://discord.com/users/1123319935360319568))  
 
 ---
 
