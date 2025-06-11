@@ -51,7 +51,7 @@ DISCORD_BOT_TOKEN=your_bot_token_here
 
 ## Example
 
-*(Insert a screenshot or link to an example embed here)*
+![image](https://github.com/user-attachments/assets/c49d2bee-ea71-4f86-9b13-bc7fcfa770a4)
 
 ---
 
