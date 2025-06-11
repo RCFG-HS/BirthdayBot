@@ -1,133 +1,70 @@
+# 🎂 Birthday Bot
 
-🎂 Discord Birthday Bot
-=======================
-
-A simple yet powerful Discord bot that allows users to submit their birthdays, view an organized birthday list, and receive a special role on their special day.
+A Discord bot that lets users submit their birthdays (DD-MM format), keeps a monthly-sorted list, assigns a birthday role on their special day, and sends a birthday greeting message in the channel. Includes a `/refresh` command to update the birthday list embed manually.
 
 ---
 
-✨ Features
------------
+## Features
 
-- 📝 Submit your birthday via a button or `/birthday` command  
-- 📅 Birthdays grouped and sorted by month  
-- 🧑‍🤝‍🧑 Automatically assigns and removes a birthday role on the correct day  
-- 🔄 Daily checks using background tasks  
-- 📦 Persistent storage using JSON  
-- 💬 Slash command and button interface using Discord UI components  
-
----
-
-🚀 Getting Started
-------------------
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/your-username/discord-birthday-bot.git
-cd discord-birthday-bot
-```
-
-### 2. Install Dependencies
-
-Requires **Python 3.9+**
-
-```bash
-pip install -r requirements.txt
-```
-
-Or manually:
-
-```bash
-pip install discord.py python-dotenv
-```
-
-### 3. Set Up Environment Variables
-
-Create a `.env` file in the root directory:
-
-```
-DISCORD_BOT_TOKEN=your_discord_bot_token_here
-```
-
-### 4. Configure Bot Settings
-
-In the main Python file (e.g., `bot.py`), update these constants:
-
-```
-GUILD_ID = YOUR_GUILD_ID
-CHANNEL_ID = CHANNEL_ID_FOR_BIRTHDAY_LIST
-BIRTHDAY_ROLE_NAME = "Birthday"
-```
-
-You can get these values by enabling **Developer Mode** in Discord and right-clicking the server, channel, or role.
+- Users submit birthdays via `/birthday` slash command (modal input)
+- Birthdays stored persistently in a JSON file (`birthdays.json`)
+- Birthday list embed sorted by month, updated daily and on demand
+- Automatically assigns a "Birthday" role on the user’s birthday
+- Sends a public birthday greeting message in the designated channel on the user’s birthday
+- Removes birthday role and deletes birthday message the next day
+- `/refresh` command to manually refresh the birthday list embed
 
 ---
 
-✅ How It Works
-----------------
+## Setup
 
-- Users click **Submit Birthday** or use the `/birthday` command.
-- Birthdays are stored in `birthdays.json`.
-- The bot posts a live-updating birthday list.
-- Every 24 hours, it checks for birthdays and assigns/removes the special role accordingly.
-
----
-
-📂 File Structure
-------------------
-
+1. Clone this repo or copy the script.
+2. Create a Discord bot, invite it to your server with members intent enabled.
+3. Create a `.env` file with your bot token:
 ```
-.
-├── birthdays.json        # Saved user birthday data
-├── bot.py                # Main bot script
-├── .env                  # Contains your bot token (not committed)
-├── requirements.txt      # Python dependencies
-└── README.md             # This file
+DISCORD_BOT_TOKEN=your_bot_token_here
 ```
+4. Update the following in the script:
+- `GUILD_ID` — your server’s ID
+- `CHANNEL_ID` — the channel ID where the bot posts birthday list and greetings
+- `BIRTHDAY_ROLE_NAME` — role to assign on birthdays (default `"Birthday"`)
+5. Run `pip install discord.py python-dotenv` if needed.
+6. Run the bot with `python your_script.py`.
 
 ---
 
-🔒 Permissions Needed
----------------------
+## Commands
 
-To function correctly, the bot requires:
-
-- Read and Send Messages
-- Manage Roles
-- Use Slash Commands and Buttons
-
-OAuth2 scopes required:
-
-```
-bot applications.commands
-```
-
-Recommended permissions integer: `268435456`
+| Command    | Description                         |
+|------------|-----------------------------------|
+| `/birthday` | Submit your birthday (DD-MM format) |
+| `/refresh`  | Refresh the birthday list embed manually |
 
 ---
 
-🛠 To-Do / Improvements
------------------------
+## Birthday Format
 
-- ✅ Sort birthdays by month  
-- ⌛ Let users update or remove their birthday  
-- 🔔 Optional announcements or reminders  
-- 🌐 Add a web dashboard  
-- 🛡️ Improve role error handling  
+- Use the format **DD-MM** when submitting your birthday, e.g., `25-12` for 25th December.
+- The bot validates the date format and disallows duplicates.
 
 ---
 
-🙌 Credits
-----------
+## Example
 
-Created by rtgm_ ([@1123319935360319568](https://discord.com/users/1123319935360319568))  
-Join the support server: https://discord.gg/au4U6R2GBP  
-Built with discord.py
+*(Insert a screenshot or link to an example embed here)*
 
 ---
 
-📄 License
-----------
+## Support & Contact
 
-MIT License – feel free to use, modify, and share!
+If you need help or want to contribute, join the server:
+
+https://discord.gg/au4U6R2GBP
+
+Or contact <@1123319935360319568>
+
+---
+
+## License
+
+MIT License
