@@ -7,17 +7,14 @@ import json, os, re, calendar
 from dotenv import load_dotenv
 from collections import defaultdict
 
-# Load token
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Config
 GUILD_ID = 895437097794666546
 CHANNEL_ID = 1382399105745293483
 BIRTHDAY_ROLE_NAME = "Birthday"
 BIRTHDAYS_FILE = "birthdays.json"
 
-# Utils
 def load_birthdays():
     try:
         with open(BIRTHDAYS_FILE, "r") as f:
@@ -29,124 +26,106 @@ def save_birthdays(data):
     with open(BIRTHDAYS_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Modal for birthday input
 class BirthdayModal(Modal, title="Enter Your Birthday"):
-    birthday = TextInput(label="Birthday (DD-MM)", placeholder="Example: 21-06")
+    birthday = TextInput(label="Birthday (DD-MM)", placeholder="Example: 12-06")
 
     async def on_submit(self, interaction: discord.Interaction):
         date_str = self.birthday.value.strip()
         user_id = str(interaction.user.id)
 
         if not re.fullmatch(r"^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])$", date_str):
-            await interaction.response.send_message("Invalid format. Use DD-MM (e.g., 21-06).", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid format. Use DD-MM (e.g., 12-06).", ephemeral=True)
             return
 
         try:
             datetime.strptime(date_str, "%d-%m")
         except ValueError:
-            await interaction.response.send_message("Invalid date.", ephemeral=True)
+            await interaction.response.send_message("❌ That date doesn't exist.", ephemeral=True)
             return
 
         data = load_birthdays()
         if user_id in data:
-            await interaction.response.send_message(f"You've already submitted: {data[user_id]}.", ephemeral=True)
+            await interaction.response.send_message(f"🎂 You already submitted: {data[user_id]}", ephemeral=True)
             return
 
         data[user_id] = date_str
         save_birthdays(data)
-
-        await interaction.response.send_message(f"🎉 Birthday set to {date_str}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Birthday set to **{date_str}**!", ephemeral=True)
         await update_birthday_message(interaction.client)
 
-# View with button
 class BirthdayView(View):
-    @discord.ui.button(label="Submit Birthday", style=discord.ButtonStyle.primary)
+    def __init__(self):
+        super().__init__(timeout=None)  # Persistent view
+
+    @discord.ui.button(
+        label="🎉 Submit Birthday",
+        style=discord.ButtonStyle.primary,
+        custom_id="birthday_submit_button"
+    )
     async def submit_birthday(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(BirthdayModal())
 
-# Set up bot
 intents = discord.Intents.default()
 intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+intents.message_content = True  # Optional: if you plan to handle messages
+
+bot = commands.AutoShardedBot(command_prefix="!", intents=intents)
 tree = bot.tree
 birthday_message = None
-greeting_messages = {}
 
-# Ready event
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
     try:
-        synced = await tree.sync(guild=discord.Object(id=GUILD_ID))
-        print(f"🔄 Synced {len(synced)} slash commands.")
+        await tree.sync(guild=discord.Object(id=GUILD_ID))
+        print(f"✅ Logged in as {bot.user} | Commands synced.")
+        bot.add_view(BirthdayView())  # Register persistent view
+        check_birthdays.start()
+        await update_birthday_message(bot)
+        await bot.change_presence(activity=discord.Game("🎂 with birthdays!"), status=discord.Status.online)
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
-    check_birthdays.start()
-    await update_birthday_message(bot)
+        print(f"❌ Error during on_ready: {e}\nPlease contact <@1123319935360319568>")
 
-# Slash command to submit birthday
 @tree.command(name="birthday", description="Submit your birthday", guild=discord.Object(id=GUILD_ID))
 async def birthday(interaction: discord.Interaction):
     await interaction.response.send_modal(BirthdayModal())
 
-# Slash command to refresh
-@tree.command(name="refresh", description="Refresh the birthday list", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="refresh", description="🔄 Force refresh the birthday list", guild=discord.Object(id=GUILD_ID))
 async def refresh(interaction: discord.Interaction):
     await update_birthday_message(interaction.client)
-    await interaction.response.send_message("✅ Birthday list refreshed.", ephemeral=True)
+    await interaction.response.send_message("✅ Refreshed the birthday list.", ephemeral=True)
 
-# Birthday checker
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
     today = datetime.now(timezone.utc).strftime("%d-%m")
     data = load_birthdays()
     guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        print("❌ Guild not found.")
+    channel = bot.get_channel(CHANNEL_ID)
+
+    if not guild or not channel:
+        print("❌ Guild or channel not found.")
         return
 
-    channel = guild.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name=BIRTHDAY_ROLE_NAME)
-    if not role or not channel:
-        print(f"❌ Role or channel not found.")
+    if not role:
+        print(f"❌ Role '{BIRTHDAY_ROLE_NAME}' not found.")
         return
-
-    # Reset greeting_messages cache
-    global greeting_messages
-    greeting_messages = {}
 
     for member in guild.members:
         user_id = str(member.id)
-        birthday_today = data.get(user_id) == today
+        is_birthday = data.get(user_id) == today
 
-        if birthday_today:
-            if role not in member.roles:
-                try:
-                    await member.add_roles(role)
-                    print(f"🎈 Gave {role.name} to {member.display_name}")
-                except Exception as e:
-                    print(f"Error adding role: {e}")
-            try:
-                msg = await channel.send(f"🎉 Happy Birthday, {member.mention}! Enjoy your Birthday. Best Of Wishes!")
-                greeting_messages[user_id] = msg.id
-            except Exception as e:
-                print(f"Error sending birthday message: {e}")
-        elif role in member.roles:
-            try:
+        try:
+            if is_birthday and role not in member.roles:
+                await member.add_roles(role)
+                await channel.send(f"🎉 Happy Birthday, {member.mention}! Enjoy your special day. Best of wishes! 🥳")
+                print(f"🎈 Added role to {member.display_name}")
+            elif not is_birthday and role in member.roles:
                 await member.remove_roles(role)
-                print(f"❌ Removed {role.name} from {member.display_name}")
-            except Exception as e:
-                print(f"Error removing role: {e}")
-            if user_id in greeting_messages:
-                try:
-                    msg = await channel.fetch_message(greeting_messages[user_id])
-                    await msg.delete()
-                    print(f"🧹 Deleted birthday message for {member.display_name}")
-                except Exception:
-                    pass
+                print(f"🎂 Removed birthday role from {member.display_name}")
+        except Exception as e:
+            print(f"⚠️ Role error for {member.display_name}: {e}")
 
-# Update birthday embed
 async def update_birthday_message(client: discord.Client):
     global birthday_message
     channel = client.get_channel(CHANNEL_ID)
@@ -159,7 +138,7 @@ async def update_birthday_message(client: discord.Client):
             if msg.author == client.user:
                 await msg.delete()
     except Exception as e:
-        print(f"Error clearing messages: {e}")
+        print(f"⚠️ Error clearing messages: {e}")
 
     data = load_birthdays()
     sorted_birthdays = sorted(data.items(), key=lambda i: datetime.strptime(i[1], "%d-%m"))
@@ -169,8 +148,8 @@ async def update_birthday_message(client: discord.Client):
     else:
         grouped = defaultdict(list)
         for user_id, date in sorted_birthdays:
-            day, month = map(int, date.split("-"))
-            grouped[month].append((user_id, date))
+            day, month = date.split("-")
+            grouped[int(month)].append((user_id, date))
 
         lines = []
         for month in range(1, 13):
@@ -193,12 +172,10 @@ async def update_birthday_message(client: discord.Client):
         color=discord.Color.purple(),
         timestamp=datetime.now(timezone.utc)
     )
-    embed.set_footer(text="Created by rtgm_")
-
+    embed.set_footer(text="Created by rtgm_", icon_url="https://cdn.discordapp.com/avatars/1123319935360319568/a.webp?size=1024")
     birthday_message = await channel.send(embed=embed, view=BirthdayView())
 
-# Run the bot
 if not TOKEN:
-    print("❌ DISCORD_BOT_TOKEN not set. Check .env file.")
+    print("❌ DISCORD_BOT_TOKEN not set. Check your .env file.")
 else:
     bot.run(TOKEN)
