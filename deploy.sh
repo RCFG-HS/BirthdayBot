@@ -6,4 +6,4 @@ pkill -f birthday.py || true
 echo "Starting bot..."
 nohup python3 birthday.py > bot.log 2>&1 &
 
-echo "Deployment complete!"
+echo "Deployment complete!" ##ngl idk what this does and cba
