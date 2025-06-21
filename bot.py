@@ -15,6 +15,8 @@ CHANNEL_ID = 1382399105745293483
 BIRTHDAY_ROLE_NAME = "Birthday"
 BIRTHDAYS_FILE = "birthdays.json"
 
+CREATOR_ICON_URL = "https://avatars.githubusercontent.com/u/66518248?v=4"
+
 def load_birthdays():
     try:
         with open(BIRTHDAYS_FILE, "r") as f:
@@ -133,8 +135,9 @@ async def update_birthday_message(client: discord.Client):
         print("❌ Channel not found.")
         return
 
+    # Delete old birthday messages by this bot (up to last 20)
     try:
-        async for msg in channel.history(limit=10):
+        async for msg in channel.history(limit=20):
             if msg.author == client.user:
                 await msg.delete()
     except Exception as e:
@@ -144,36 +147,48 @@ async def update_birthday_message(client: discord.Client):
     sorted_birthdays = sorted(data.items(), key=lambda i: datetime.strptime(i[1], "%d-%m"))
 
     if not sorted_birthdays:
-        description = "No birthdays submitted yet."
-    else:
-        grouped = defaultdict(list)
-        for user_id, date in sorted_birthdays:
-            day, month = date.split("-")
-            grouped[int(month)].append((user_id, date))
+        # Send a single embed saying no birthdays
+        embed = discord.Embed(
+            title="🎂 Birthday List",
+            description="No birthdays submitted yet.",
+            color=discord.Color.purple(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        embed.set_footer(text="Created by rtgm_", icon_url=CREATOR_ICON_URL)
+        birthday_message = await channel.send(embed=embed, view=BirthdayView())
+        return
+
+    # Group birthdays by month
+    grouped = defaultdict(list)
+    for user_id, date in sorted_birthdays:
+        day, month = date.split("-")
+        grouped[int(month)].append((user_id, date))
+
+    # Send one embed per month, in month order (January to December)
+    for month in range(1, 13):
+        if month not in grouped:
+            continue
 
         lines = []
-        for month in range(1, 13):
-            if month in grouped:
-                lines.append(f"__**{calendar.month_name[month]}**__")
-                for user_id, date in grouped[month]:
-                    try:
-                        member = channel.guild.get_member(int(user_id)) or await channel.guild.fetch_member(int(user_id))
-                        name = member.display_name if member else f"User {user_id}"
-                    except:
-                        name = f"User {user_id}"
-                    lines.append(f"**{date}** — {name}")
-                lines.append("")
+        for user_id, date in grouped[month]:
+            try:
+                member = channel.guild.get_member(int(user_id)) or await channel.guild.fetch_member(int(user_id))
+                name = member.display_name if member else f"User {user_id}"
+            except:
+                name = f"User {user_id}"
+            lines.append(f"**{date}** — {name}")
 
-        description = "\n".join(lines).strip()
+        description = "\n".join(lines)
 
-    embed = discord.Embed(
-        title="🎂 Birthday List",
-        description=description,
-        color=discord.Color.purple(),
-        timestamp=datetime.now(timezone.utc)
-    )
-    embed.set_footer(text="Created by rtgm_", icon_url="https://cdn.discordapp.com/avatars/1123319935360319568/a.webp?size=1024")
-    birthday_message = await channel.send(embed=embed, view=BirthdayView())
+        embed = discord.Embed(
+            title=f"🎂 Birthdays in {calendar.month_name[month]}",
+            description=description,
+            color=discord.Color.purple(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        embed.set_footer(text="Created by rtgm_", icon_url=CREATOR_ICON_URL)
+
+        await channel.send(embed=embed, view=BirthdayView())
 
 if not TOKEN:
     print("❌ DISCORD_BOT_TOKEN not set. Check your .env file.")
