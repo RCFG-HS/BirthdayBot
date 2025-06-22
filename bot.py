@@ -132,10 +132,13 @@ async def check_birthdays():
 
     now_utc = datetime.now(timezone.utc)
 
-    for member in guild.members:
-        user_id = str(member.id)
-        user_data = data.get(user_id)
-        if not user_data:
+    to_remove = []
+
+    for user_id, user_data in data.items():
+        member = guild.get_member(int(user_id))
+        # If member not found, they left or were banned
+        if not member:
+            to_remove.append(user_id)
             continue
 
         user_tz_str = user_data.get("timezone", "UTC")
@@ -160,6 +163,13 @@ async def check_birthdays():
                 print(f"🎂 Removed birthday role from {member.display_name}")
         except Exception as e:
             print(f"⚠️ Role error for {member.display_name}: {e}")
+
+    # Remove birthdays of users no longer in guild
+    if to_remove:
+        for user_id in to_remove:
+            data.pop(user_id, None)
+        save_birthdays(data)
+        print(f"🗑️ Removed birthdays for users no longer in guild: {to_remove}")
 
 async def update_birthday_message(client: discord.Client):
     global birthday_message
