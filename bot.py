@@ -115,6 +115,27 @@ async def refresh(interaction: discord.Interaction):
     await update_birthday_message(interaction.client)
     await interaction.response.send_message("✅ Refreshed the birthday list.", ephemeral=True)
 
+@tree.command(name="timezone", description="Update your birthday timezone", guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(timezone="Your timezone in IANA format, e.g., Europe/London")
+async def timezone(interaction: discord.Interaction, timezone: str):
+    timezone = timezone.strip()
+    if timezone not in available_timezones():
+        await interaction.response.send_message("❌ Invalid timezone. Please use a valid IANA timezone (e.g., Europe/London).", ephemeral=True)
+        return
+
+    user_id = str(interaction.user.id)
+    data = load_birthdays()
+
+    if user_id not in data:
+        await interaction.response.send_message("❌ You have not submitted a birthday yet. Use /birthday to submit first.", ephemeral=True)
+        return
+
+    data[user_id]["timezone"] = timezone
+    save_birthdays(data)
+    await interaction.response.send_message(f"✅ Your timezone has been updated to **{timezone}**.", ephemeral=True)
+
+    await update_birthday_message(interaction.client)
+
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
@@ -132,13 +153,10 @@ async def check_birthdays():
 
     now_utc = datetime.now(timezone.utc)
 
-    to_remove = []
-
-    for user_id, user_data in data.items():
-        member = guild.get_member(int(user_id))
-        # If member not found, they left or were banned
-        if not member:
-            to_remove.append(user_id)
+    for member in guild.members:
+        user_id = str(member.id)
+        user_data = data.get(user_id)
+        if not user_data:
             continue
 
         user_tz_str = user_data.get("timezone", "UTC")
@@ -163,13 +181,6 @@ async def check_birthdays():
                 print(f"🎂 Removed birthday role from {member.display_name}")
         except Exception as e:
             print(f"⚠️ Role error for {member.display_name}: {e}")
-
-    # Remove birthdays of users no longer in guild
-    if to_remove:
-        for user_id in to_remove:
-            data.pop(user_id, None)
-        save_birthdays(data)
-        print(f"🗑️ Removed birthdays for users no longer in guild: {to_remove}")
 
 async def update_birthday_message(client: discord.Client):
     global birthday_message
