@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button, Modal, TextInput
 from discord import app_commands
-from datetime import datetime, timezone
+from datetime import datetime
+import datetime as dt  # avoid collision with 'timezone' command
 import json, os, re, calendar
 from dotenv import load_dotenv
 from collections import defaultdict
@@ -74,6 +75,33 @@ class BirthdayModal(Modal, title="Enter Your Birthday"):
         await interaction.response.send_message(f"✅ Birthday set to **{date_str}** with timezone **{data[user_id]['timezone']}**!", ephemeral=True)
         await update_birthday_message(interaction.client)
 
+class TimezoneModal(Modal, title="Update Your Timezone"):
+    timezone = TextInput(
+        label="New Timezone (IANA format)",
+        placeholder="Example: Europe/London",
+        required=True,
+        max_length=50
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        tz_str = self.timezone.value.strip()
+        user_id = str(interaction.user.id)
+
+        # Validate timezone
+        if tz_str not in available_timezones():
+            await interaction.response.send_message("❌ Invalid timezone. Use a valid IANA timezone name (e.g., Europe/London).", ephemeral=True)
+            return
+
+        data = load_birthdays()
+        if user_id not in data:
+            await interaction.response.send_message("❌ You have not submitted a birthday yet. Use /birthday first.", ephemeral=True)
+            return
+
+        data[user_id]["timezone"] = tz_str
+        save_birthdays(data)
+        await interaction.response.send_message(f"✅ Timezone updated to **{tz_str}**!", ephemeral=True)
+        await update_birthday_message(interaction.client)
+
 class BirthdayView(View):
     def __init__(self):
         super().__init__(timeout=None)  # Persistent view
@@ -85,6 +113,11 @@ class BirthdayView(View):
     )
     async def submit_birthday(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(BirthdayModal())
+
+@discord.app_commands.command(name="timezone", description="Update your birthday timezone")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+async def timezone(interaction: discord.Interaction):
+    await interaction.response.send_modal(TimezoneModal())
 
 intents = discord.Intents.default()
 intents.members = True
@@ -115,27 +148,6 @@ async def refresh(interaction: discord.Interaction):
     await update_birthday_message(interaction.client)
     await interaction.response.send_message("✅ Refreshed the birthday list.", ephemeral=True)
 
-@tree.command(name="timezone", description="Update your birthday timezone", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(timezone="Your timezone in IANA format, e.g., Europe/London")
-async def timezone(interaction: discord.Interaction, timezone: str):
-    timezone = timezone.strip()
-    if timezone not in available_timezones():
-        await interaction.response.send_message("❌ Invalid timezone. Please use a valid IANA timezone (e.g., Europe/London).", ephemeral=True)
-        return
-
-    user_id = str(interaction.user.id)
-    data = load_birthdays()
-
-    if user_id not in data:
-        await interaction.response.send_message("❌ You have not submitted a birthday yet. Use /birthday to submit first.", ephemeral=True)
-        return
-
-    data[user_id]["timezone"] = timezone
-    save_birthdays(data)
-    await interaction.response.send_message(f"✅ Your timezone has been updated to **{timezone}**.", ephemeral=True)
-
-    await update_birthday_message(interaction.client)
-
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
@@ -151,7 +163,7 @@ async def check_birthdays():
         print(f"❌ Role '{BIRTHDAY_ROLE_NAME}' not found.")
         return
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(dt.timezone.utc)
 
     for member in guild.members:
         user_id = str(member.id)
@@ -204,7 +216,7 @@ async def update_birthday_message(client: discord.Client):
             title="🎂 Birthday List",
             description="No birthdays submitted yet.",
             color=discord.Color.purple(),
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(dt.timezone.utc)
         )
         embed.set_footer(text="Created by rtgm_", icon_url=CREATOR_ICON_URL)
         birthday_message = await channel.send(embed=embed, view=BirthdayView())
@@ -234,7 +246,7 @@ async def update_birthday_message(client: discord.Client):
             title=f"🎂 Birthdays in {calendar.month_name[month]}",
             description=description,
             color=discord.Color.purple(),
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(dt.timezone.utc)
         )
         embed.set_footer(text="Created by rtgm_", icon_url=CREATOR_ICON_URL)
 
