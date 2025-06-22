@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json, os, re, calendar
 from dotenv import load_dotenv
 from collections import defaultdict
+from zoneinfo import ZoneInfo, available_timezones
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -30,29 +31,47 @@ def save_birthdays(data):
 
 class BirthdayModal(Modal, title="Enter Your Birthday"):
     birthday = TextInput(label="Birthday (DD-MM)", placeholder="Example: 12-06")
+    timezone = TextInput(
+        label="Timezone (optional, IANA format)",
+        placeholder="Example: Europe/London or leave blank",
+        required=False,
+        max_length=50
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         date_str = self.birthday.value.strip()
+        tz_str = self.timezone.value.strip()
         user_id = str(interaction.user.id)
 
+        # Validate birthday format
         if not re.fullmatch(r"^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])$", date_str):
-            await interaction.response.send_message("❌ Invalid format. Use DD-MM (e.g., 12-06).", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid birthday format. Use DD-MM (e.g., 12-06).", ephemeral=True)
             return
-
         try:
             datetime.strptime(date_str, "%d-%m")
         except ValueError:
             await interaction.response.send_message("❌ That date doesn't exist.", ephemeral=True)
             return
 
+        # Validate timezone if provided
+        if tz_str:
+            if tz_str not in available_timezones():
+                await interaction.response.send_message("❌ Invalid timezone. Use a valid IANA timezone name (e.g., Europe/London).", ephemeral=True)
+                return
+
         data = load_birthdays()
         if user_id in data:
-            await interaction.response.send_message(f"🎂 You already submitted: {data[user_id]}", ephemeral=True)
+            await interaction.response.send_message(
+                f"🎂 You already submitted: {data[user_id]['birthday']} with timezone: {data[user_id].get('timezone','UTC')}", ephemeral=True)
             return
 
-        data[user_id] = date_str
+        # Save birthday and timezone (default UTC)
+        data[user_id] = {
+            "birthday": date_str,
+            "timezone": tz_str if tz_str else "UTC"
+        }
         save_birthdays(data)
-        await interaction.response.send_message(f"✅ Birthday set to **{date_str}**!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Birthday set to **{date_str}** with timezone **{data[user_id]['timezone']}**!", ephemeral=True)
         await update_birthday_message(interaction.client)
 
 class BirthdayView(View):
@@ -69,7 +88,7 @@ class BirthdayView(View):
 
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True  # Optional: if you plan to handle messages
+intents.message_content = True
 
 bot = commands.AutoShardedBot(command_prefix="!", intents=intents)
 tree = bot.tree
@@ -80,7 +99,7 @@ async def on_ready():
     try:
         await tree.sync(guild=discord.Object(id=GUILD_ID))
         print(f"✅ Logged in as {bot.user} | Commands synced.")
-        bot.add_view(BirthdayView())  # Register persistent view
+        bot.add_view(BirthdayView())
         check_birthdays.start()
         await update_birthday_message(bot)
         await bot.change_presence(activity=discord.Game("🎂 with birthdays!"), status=discord.Status.online)
@@ -99,11 +118,9 @@ async def refresh(interaction: discord.Interaction):
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
-    today = datetime.now(timezone.utc).strftime("%d-%m")
     data = load_birthdays()
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-
     if not guild or not channel:
         print("❌ Guild or channel not found.")
         return
@@ -113,9 +130,25 @@ async def check_birthdays():
         print(f"❌ Role '{BIRTHDAY_ROLE_NAME}' not found.")
         return
 
+    now_utc = datetime.now(timezone.utc)
+
     for member in guild.members:
         user_id = str(member.id)
-        is_birthday = data.get(user_id) == today
+        user_data = data.get(user_id)
+        if not user_data:
+            continue
+
+        user_tz_str = user_data.get("timezone", "UTC")
+        try:
+            user_tz = ZoneInfo(user_tz_str)
+        except Exception:
+            user_tz = ZoneInfo("UTC")
+
+        user_now = now_utc.astimezone(user_tz)
+        user_bday = user_data["birthday"]
+        user_bday_day, user_bday_month = user_bday.split("-")
+
+        is_birthday = (user_now.day == int(user_bday_day) and user_now.month == int(user_bday_month))
 
         try:
             if is_birthday and role not in member.roles:
@@ -135,7 +168,6 @@ async def update_birthday_message(client: discord.Client):
         print("❌ Channel not found.")
         return
 
-    # Delete old birthday messages by this bot (up to last 20)
     try:
         async for msg in channel.history(limit=20):
             if msg.author == client.user:
@@ -144,10 +176,9 @@ async def update_birthday_message(client: discord.Client):
         print(f"⚠️ Error clearing messages: {e}")
 
     data = load_birthdays()
-    sorted_birthdays = sorted(data.items(), key=lambda i: datetime.strptime(i[1], "%d-%m"))
+    sorted_birthdays = sorted(data.items(), key=lambda i: datetime.strptime(i[1]['birthday'], "%d-%m"))
 
     if not sorted_birthdays:
-        # Send a single embed saying no birthdays
         embed = discord.Embed(
             title="🎂 Birthday List",
             description="No birthdays submitted yet.",
@@ -158,25 +189,23 @@ async def update_birthday_message(client: discord.Client):
         birthday_message = await channel.send(embed=embed, view=BirthdayView())
         return
 
-    # Group birthdays by month
     grouped = defaultdict(list)
-    for user_id, date in sorted_birthdays:
-        day, month = date.split("-")
-        grouped[int(month)].append((user_id, date))
+    for user_id, user_info in sorted_birthdays:
+        day, month = user_info["birthday"].split("-")
+        grouped[int(month)].append((user_id, user_info["birthday"], user_info.get("timezone", "UTC")))
 
-    # Send one embed per month, in month order (January to December)
     for month in range(1, 13):
         if month not in grouped:
             continue
 
         lines = []
-        for user_id, date in grouped[month]:
+        for user_id, birthday, tz in grouped[month]:
             try:
                 member = channel.guild.get_member(int(user_id)) or await channel.guild.fetch_member(int(user_id))
                 name = member.display_name if member else f"User {user_id}"
             except:
                 name = f"User {user_id}"
-            lines.append(f"**{date}** — {name}")
+            lines.append(f"**{birthday}** ({tz}) — {name}")
 
         description = "\n".join(lines)
 
