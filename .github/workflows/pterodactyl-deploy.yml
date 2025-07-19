@@ -1,0 +1,54 @@
+name: Auto Deploy to Pterodactyl
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint code (flake8)
+        run: |
+          pip install flake8
+          flake8 bot.py
+        continue-on-error: true
+
+      # Upload project files to Pterodactyl via SFTP
+      - name: Upload code to Pterodactyl SFTP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PTERO_SFTP_HOST }}
+          username: ${{ secrets.PTERO_SFTP_USER }}
+          password: ${{ secrets.PTERO_SFTP_PASS }}
+          source: "."
+          target: "/home/container/"
+          port: 2022
+          overwrite: true
+          rm: false
+
+      # Restart the Pterodactyl server using the API
+      - name: Restart Pterodactyl Server
+        env:
+          PTERO_HOST: ${{ secrets.PTERO_HOST }}
+          PTERO_API_KEY: ${{ secrets.PTERO_API_KEY }}
+          PTERO_SERVER_ID: ${{ secrets.PTERO_SERVER_ID }}
+        run: |
+          curl -X POST "$PTERO_HOST/api/client/servers/$PTERO_SERVER_ID/power" \
+            -H "Authorization: Bearer $PTERO_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data '{"signal": "restart"}'
